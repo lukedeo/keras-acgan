@@ -3,13 +3,14 @@
 """
 file: mnist_acgan.py
 author: Luke de Oliveira (lukedeo@vaitech.io)
+
 Train an Auxiliary Classifier Generative Adversarial Network (ACGAN) on the
 MNIST dataset. See https://arxiv.org/abs/1610.09585 for more details.
 
 You should start to see reasonable images after ~5 epochs, and good images
-by ~15 epochs. You should use a GPU, as the convolution-heavy operations are 
+by ~15 epochs. You should use a GPU, as the convolution-heavy operations are
 very slow on the CPU. Prefer the TensorFlow backend if you plan on iterating, as
-the 
+the compilation time can be a blocker using Theano.
 
 Timings:
 
@@ -18,6 +19,9 @@ Hardware           | Backend | Time / Epoch
  CPU               | TF      | 3 hrs
  Titan X (maxwell) | TF      | 4 min
  Titan X (maxwell) | TH      | 7 min
+
+Consult https://github.com/lukedeo/keras-acgan for more information and
+example output
 """
 from __future__ import print_function
 
@@ -27,7 +31,7 @@ from PIL import Image
 
 from six.moves import range
 
-from keras.backend import set_image_dim_ordering
+import keras.backend as K
 from keras.datasets import mnist
 from keras.layers import Input, Dense, Reshape, Flatten, Embedding, merge, Dropout
 from keras.layers.advanced_activations import LeakyReLU
@@ -39,17 +43,7 @@ import numpy as np
 
 np.random.seed(1337)
 
-set_image_dim_ordering('th')
-
-# nice, tabular formatting for progress messages
-HEADING = '{0:<22s} | {1:4s} | {2:15s} | {3:5s}'
-ROW_FMT = '{0:<22s} | {1:<4.2f} | {2:<15.2f} | {3:<5.2f}'
-
-
-def adam_config():
-    # parameters suggested in https://arxiv.org/abs/1511.06434, slows down
-    # Adam for better convergence
-    return Adam(lr=0.0002, beta_1=0.5, beta_2=0.999, epsilon=1e-08)
+K.set_image_dim_ordering('th')
 
 
 def build_generator(latent_size):
@@ -79,10 +73,10 @@ def build_generator(latent_size):
     latent = Input(shape=(latent_size, ))
 
     # this will be our label
-    image_class = Input(shape=(1, 1), dtype='int32')
+    image_class = Input(shape=(1,), dtype='int32')
 
     # 10 classes in MNIST
-    cls = Flatten()(Embedding(10, latent_size, input_length=1,
+    cls = Flatten()(Embedding(10, latent_size,
                               init='glorot_normal')(image_class))
 
     # hadamard product between z-space and a class conditional embedding
@@ -121,8 +115,10 @@ def build_discriminator():
 
     features = cnn(image)
 
-    # fake output tracks binary {fake, not-fake} discrimination, and the
-    # auxiliary requires reconstruction of latent features, in this case, labels
+    # first output (name=generation) is whether or not the discriminator
+    # thinks the image that is being shown is fake, and the second output
+    # (name=auxiliary) is the class that the discriminator thinks the image
+    # belongs to.
     fake = Dense(1, activation='sigmoid', name='generation')(features)
     aux = Dense(10, activation='softmax', name='auxiliary')(features)
 
@@ -135,17 +131,24 @@ if __name__ == '__main__':
     batch_size = 100
     latent_size = 100
 
+    # Adam parameters suggested in https://arxiv.org/abs/1511.06434
+    adam_lr = 0.0002
+    adam_beta_1 = 0.5
+
     # build the discriminator
     discriminator = build_discriminator()
-    discriminator.compile(adam_config(), ['binary_crossentropy',
-                                          'sparse_categorical_crossentropy'])
+    discriminator.compile(
+        optimizer=Adam(lr=adam_lr, beta_1=adam_beta_1),
+        loss=['binary_crossentropy', 'sparse_categorical_crossentropy']
+    )
 
     # build the generator
     generator = build_generator(latent_size)
-    generator.compile(adam_config(), 'binary_crossentropy')
+    generator.compile(optimizer=Adam(lr=adam_lr, beta_1=adam_beta_1),
+                      loss='binary_crossentropy')
 
     latent = Input(shape=(latent_size, ))
-    image_class = Input(shape=(1, 1), dtype='int32')
+    image_class = Input(shape=(1,), dtype='int32')
 
     # get a fake image
     fake = generator([latent, image_class])
@@ -155,10 +158,10 @@ if __name__ == '__main__':
     fake, aux = discriminator(fake)
     combined = Model(input=[latent, image_class], output=[fake, aux])
 
-    combined.compile(adam_config(), ['binary_crossentropy',
-                                     'sparse_categorical_crossentropy'])
-
-    discriminator.trainable = True
+    combined.compile(
+        optimizer=Adam(lr=adam_lr, beta_1=adam_beta_1),
+        loss=['binary_crossentropy', 'sparse_categorical_crossentropy']
+    )
 
     # get our mnist data, and force it to be of shape (..., 1, 28, 28) with
     # range [-1, 1]
@@ -175,7 +178,7 @@ if __name__ == '__main__':
     test_history = defaultdict(list)
 
     for epoch in range(nb_epochs):
-        # print 'Epoch {} of {}'.format(epoch + 1, nb_epochs)
+        print('Epoch {} of {}'.format(epoch + 1, nb_epochs))
 
         nb_batches = int(X_train.shape[0] / batch_size)
         progress_bar = Progbar(target=nb_batches)
@@ -197,10 +200,10 @@ if __name__ == '__main__':
 
             # generate a batch of fake images, using the generated labels as a
             # conditioner. We reshape the sampled labels to be
-            # (batch_size, 1, 1) so that we can feed them into the embedding
+            # (batch_size, 1) so that we can feed them into the embedding
             # layer as a length one sequence
             generated_images = generator.predict(
-                [noise, sampled_labels.reshape((-1, 1, 1))], verbose=0)
+                [noise, sampled_labels.reshape((-1, 1))], verbose=0)
 
             X = np.concatenate((image_batch, generated_images))
             y = np.array([1] * batch_size + [0] * batch_size)
@@ -215,18 +218,13 @@ if __name__ == '__main__':
             noise = np.random.uniform(-1, 1, (2 * batch_size, latent_size))
             sampled_labels = np.random.randint(0, 10, 2 * batch_size)
 
-            # we want to fix the discriminator and let the generator train to
-            # trick it
-            discriminator.trainable = False
-
+            # we want to train the genrator to trick the discriminator
             # For the generator, we want all the {fake, not-fake} labels to say
             # not-fake
             trick = np.ones(2 * batch_size)
 
             epoch_gen_loss.append(combined.train_on_batch(
-                [noise, sampled_labels.reshape((-1, 1, 1))], [trick, sampled_labels]))
-
-            discriminator.trainable = True
+                [noise, sampled_labels.reshape((-1, 1))], [trick, sampled_labels]))
 
         print('\nTesting for epoch {}:'.format(epoch + 1))
 
@@ -238,7 +236,7 @@ if __name__ == '__main__':
         # sample some labels from p_c and generate images from them
         sampled_labels = np.random.randint(0, 10, nb_test)
         generated_images = generator.predict(
-            [noise, sampled_labels.reshape((-1, 1, 1))], verbose=False)
+            [noise, sampled_labels.reshape((-1, 1))], verbose=False)
 
         X = np.concatenate((X_test, generated_images))
         y = np.array([1] * nb_test + [0] * nb_test)
@@ -257,7 +255,7 @@ if __name__ == '__main__':
         trick = np.ones(2 * nb_test)
 
         generator_test_loss = combined.evaluate(
-            [noise, sampled_labels.reshape((-1, 1, 1))],
+            [noise, sampled_labels.reshape((-1, 1))],
             [trick, sampled_labels], verbose=False)
 
         generator_train_loss = np.mean(np.array(epoch_gen_loss), axis=0)
@@ -269,9 +267,11 @@ if __name__ == '__main__':
         test_history['generator'].append(generator_test_loss)
         test_history['discriminator'].append(discriminator_test_loss)
 
-        print(HEADING.format('component', *discriminator.metrics_names))
+        print('{0:<22s} | {1:4s} | {2:15s} | {3:5s}'.format(
+            'component', *discriminator.metrics_names))
         print('-' * 65)
 
+        ROW_FMT = '{0:<22s} | {1:<4.2f} | {2:<15.2f} | {3:<5.2f}'
         print(ROW_FMT.format('generator (train)',
                              *train_history['generator'][-1]))
         print(ROW_FMT.format('generator (test)',
@@ -292,7 +292,7 @@ if __name__ == '__main__':
 
         sampled_labels = np.array([
             [i] * 10 for i in range(10)
-        ]).reshape(-1, 1, 1)
+        ]).reshape(-1, 1)
 
         # get a batch to display
         generated_images = generator.predict(
