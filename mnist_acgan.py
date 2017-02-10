@@ -132,7 +132,7 @@ if __name__ == '__main__':
     latent_size = 100
 
     # Adam parameters suggested in https://arxiv.org/abs/1511.06434
-    adam_lr = 0.0002
+    adam_lr = 0.00005
     adam_beta_1 = 0.5
 
     # build the discriminator
