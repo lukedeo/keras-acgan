@@ -139,8 +139,9 @@ def setting_data_length(data):
         y_test = np.resize(data[1][1], (datalen,))
 
         print("Number of data changed to", datalen)
-    
-    return (X_train, y_train), (X_test, y_test)
+        return (X_train, y_train), (X_test, y_test)
+    else:
+        return data
 
 def load_weights_with_confirm(name, model):
     path = "./" + name + "_params"
