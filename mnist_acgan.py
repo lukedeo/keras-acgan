@@ -26,7 +26,7 @@ example output
 from __future__ import print_function
 
 from collections import defaultdict
-import cPickle as pickle
+import _pickle as pickle
 from PIL import Image
 
 from six.moves import range
@@ -40,6 +40,10 @@ from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils.generic_utils import Progbar
 import numpy as np
+import re
+import os
+
+from file_utility.file_utility import *
 
 np.random.seed(1337)
 
@@ -124,10 +128,34 @@ def build_discriminator():
 
     return Model(input=image, output=[fake, aux])
 
-if __name__ == '__main__':
+def load_weights_with_confirm(name, model):
+    path = "./" + name + "_params"
+    os.mkdir(path)
+    params_files_name = read_child_files_name(path)
 
+    if params_files_name:
+        params_files = [[int(re.findall("\d+", i)[0]), i] for i in params_files_name if is_file_extension(i, ".hdf5")]
+        epochs = [i[0] for i in params_files]
+
+        print("A learned parameter file was found.")
+        print("Do you use it? (y/n)")
+        s = input()
+        if s == "y" or s == "Y":
+            print("What epochs number do you want to start with?")
+            for i in params_files:
+                print("epoch ", i[0])
+            
+            epoch_input = input()
+
+            if epoch_input in epochs:
+                params_file_name = g_params_files[epochs.index(epoch_input)]
+                model.load_weights(path + "/" + params_file_name)
+            else:
+                print("The number you entered is invalid.")
+
+if __name__ == '__main__':
     # batch and latent size taken from the paper
-    nb_epochs = 50
+    nb_epochs = 1
     batch_size = 100
     latent_size = 100
 
@@ -153,8 +181,7 @@ if __name__ == '__main__':
     # get a fake image
     fake = generator([latent, image_class])
 
-    # we only want to be able to train generation for the combined model
-    discriminator.trainable = False
+    discriminator.trainable = True
     fake, aux = discriminator(fake)
     combined = Model(input=[latent, image_class], output=[fake, aux])
 
@@ -176,6 +203,9 @@ if __name__ == '__main__':
 
     train_history = defaultdict(list)
     test_history = defaultdict(list)
+
+    load_weights_with_confirm("generator", generator);
+    load_weights_with_confirm("discriminator", discriminator);
 
     for epoch in range(nb_epochs):
         print('Epoch {} of {}'.format(epoch + 1, nb_epochs))
@@ -283,9 +313,9 @@ if __name__ == '__main__':
 
         # save weights every epoch
         generator.save_weights(
-            'params_generator_epoch_{0:03d}.hdf5'.format(epoch), True)
+            './generator_params/epoch_{0:03d}.hdf5'.format(epoch), True)
         discriminator.save_weights(
-            'params_discriminator_epoch_{0:03d}.hdf5'.format(epoch), True)
+            './discriminator_params/epoch_{0:03d}.hdf5'.format(epoch), True)
 
         # generate some digits to display
         noise = np.random.uniform(-1, 1, (100, latent_size))
