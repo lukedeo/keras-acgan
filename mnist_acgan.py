@@ -42,6 +42,7 @@ from keras.utils.generic_utils import Progbar
 import numpy as np
 import re
 import os
+import sys
 
 from file_utility.file_utility import *
 
@@ -130,25 +131,26 @@ def build_discriminator():
 
 def load_weights_with_confirm(name, model):
     path = "./" + name + "_params"
-    os.mkdir(path)
+    if not os.path.exists(path):
+        os.makedirs(path)
     params_files_name = read_child_files_name(path)
 
     if params_files_name:
         params_files = [[int(re.findall("\d+", i)[0]), i] for i in params_files_name if is_file_extension(i, ".hdf5")]
+        params_files.sort()
+
         epochs = [i[0] for i in params_files]
 
-        print("A learned parameter file was found.")
-        print("Do you use it? (y/n)")
-        s = input()
+        print("A parameter file of the " + name + " was found.")
+        s = input("Do you use it? (y/n) : ")
         if s == "y" or s == "Y":
             print("What epochs number do you want to start with?")
             for i in params_files:
                 print("epoch ", i[0])
-            
-            epoch_input = input()
+            epoch_input = int(input("Please enter the number : "))
 
             if epoch_input in epochs:
-                params_file_name = params_files[epochs.index(epoch_input)]
+                params_file_name = params_files[epochs.index(epoch_input)][1]
                 model.load_weights(path + "/" + params_file_name)
             else:
                 print("The number you entered is invalid.")
@@ -193,6 +195,18 @@ if __name__ == '__main__':
     # get our mnist data, and force it to be of shape (..., 1, 28, 28) with
     # range [-1, 1]
     (X_train, y_train), (X_test, y_test) = mnist.load_data()
+
+
+    if len(sys.argv) > 1 and re.match("datalen=\d+", sys.argv[1]):
+        datalen = int(re.findall("\d+", sys.argv[1])[0])
+
+        X_train = np.resize(X_train, (datalen, 28, 28))
+        y_train = np.resize(y_train, (datalen,))
+        X_test = np.resize(X_test, (datalen, 28, 28))
+        y_test = np.resize(y_test, (datalen,))
+
+        print("Number of data changed to", datalen)
+
     X_train = (X_train.astype(np.float32) - 127.5) / 127.5
     X_train = np.expand_dims(X_train, axis=1)
 
@@ -217,6 +231,7 @@ if __name__ == '__main__':
         epoch_disc_loss = []
 
         for index in range(nb_batches):
+            print('\nBathes {} of {}'.format(index, nb_batches))
             progress_bar.update(index)
             # generate a new batch of noise
             noise = np.random.uniform(-1, 1, (batch_size, latent_size))
