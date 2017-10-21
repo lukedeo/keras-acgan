@@ -129,6 +129,19 @@ def build_discriminator():
 
     return Model(input=image, output=[fake, aux])
 
+def setting_data_length(data):
+    if len(sys.argv) > 1 and re.match("datalen=\d+", sys.argv[1]):
+        datalen = int(re.findall("\d+", sys.argv[1])[0])
+
+        X_train = np.resize(data[0][0], (datalen, 28, 28))
+        y_train = np.resize(data[0][1], (datalen,))
+        X_test = np.resize(data[1][0], (datalen, 28, 28))
+        y_test = np.resize(data[1][1], (datalen,))
+
+        print("Number of data changed to", datalen)
+    
+    return (X_train, y_train), (X_test, y_test)
+
 def load_weights_with_confirm(name, model):
     path = "./" + name + "_params"
     if not os.path.exists(path):
@@ -152,8 +165,11 @@ def load_weights_with_confirm(name, model):
             if epoch_input in epochs:
                 params_file_name = params_files[epochs.index(epoch_input)][1]
                 model.load_weights(path + "/" + params_file_name)
+                return epoch_input + 1
             else:
                 print("The number you entered is invalid.")
+
+    return 0
 
 if __name__ == '__main__':
     # batch and latent size taken from the paper
@@ -194,18 +210,7 @@ if __name__ == '__main__':
 
     # get our mnist data, and force it to be of shape (..., 1, 28, 28) with
     # range [-1, 1]
-    (X_train, y_train), (X_test, y_test) = mnist.load_data()
-
-
-    if len(sys.argv) > 1 and re.match("datalen=\d+", sys.argv[1]):
-        datalen = int(re.findall("\d+", sys.argv[1])[0])
-
-        X_train = np.resize(X_train, (datalen, 28, 28))
-        y_train = np.resize(y_train, (datalen,))
-        X_test = np.resize(X_test, (datalen, 28, 28))
-        y_test = np.resize(y_test, (datalen,))
-
-        print("Number of data changed to", datalen)
+    (X_train, y_train), (X_test, y_test) = setting_data_length(mnist.load_data())
 
     X_train = (X_train.astype(np.float32) - 127.5) / 127.5
     X_train = np.expand_dims(X_train, axis=1)
@@ -218,11 +223,13 @@ if __name__ == '__main__':
     train_history = defaultdict(list)
     test_history = defaultdict(list)
 
-    load_weights_with_confirm("generator", generator);
-    load_weights_with_confirm("discriminator", discriminator);
+    g_start_epoch = load_weights_with_confirm("generator", generator);
+    d_start_epoch = load_weights_with_confirm("discriminator", discriminator);
 
     for epoch in range(nb_epochs):
         print('Epoch {} of {}'.format(epoch + 1, nb_epochs))
+        print('Generator : Epoch {} of {}'.format(epoch + g_start_epoch + 1, nb_epochs + g_start_epoch))
+        print('Discriminator : Epoch {} of {}'.format(epoch + d_start_epoch + 1, nb_epochs + d_start_epoch))
 
         nb_batches = int(X_train.shape[0] / batch_size)
         progress_bar = Progbar(target=nb_batches)
@@ -328,9 +335,9 @@ if __name__ == '__main__':
 
         # save weights every epoch
         generator.save_weights(
-            './generator_params/epoch_{0:03d}.hdf5'.format(epoch), True)
+            './generator_params/epoch_{0:03d}.hdf5'.format(epoch + g_start_epoch), True)
         discriminator.save_weights(
-            './discriminator_params/epoch_{0:03d}.hdf5'.format(epoch), True)
+            './discriminator_params/epoch_{0:03d}.hdf5'.format(epoch + d_start_epoch), True)
 
         # generate some digits to display
         noise = np.random.uniform(-1, 1, (100, latent_size))
