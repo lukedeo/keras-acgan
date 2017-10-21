@@ -155,7 +155,7 @@ def load_weights_with_confirm(name, model):
 
 if __name__ == '__main__':
     # batch and latent size taken from the paper
-    nb_epochs = 1
+    nb_epochs = 50
     batch_size = 100
     latent_size = 100
 
