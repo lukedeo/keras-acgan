@@ -148,7 +148,7 @@ def load_weights_with_confirm(name, model):
             epoch_input = input()
 
             if epoch_input in epochs:
-                params_file_name = g_params_files[epochs.index(epoch_input)]
+                params_file_name = params_files[epochs.index(epoch_input)]
                 model.load_weights(path + "/" + params_file_name)
             else:
                 print("The number you entered is invalid.")
