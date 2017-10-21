@@ -8,8 +8,8 @@ To run this, you should have [Keras](https://keras.io) and either [Theano](http:
 
 You can simply run `python mnist_acgan.py`, and it will create:
 
-* `params_discriminator_epoch_{{epoch_number}}.hdf5`, the discriminator network parameters
-* `params_generator_epoch_{{epoch_number}}.hdf5`, the generator network parameters
+* `./discriminator_params/epoch_{{epoch_number}}.hdf5`, the discriminator network parameters
+* `./generator_params/epoch_{{epoch_number}}.hdf5`, the generator network parameters
 * `plot_epoch_{{epoch_number}}_generated.png`, a plot of some generated images
 
 After this is done, you can click through [`acgan-analysis.ipynb`](./acgan-analysis.ipynb) to generate more images and understand the system performance.
