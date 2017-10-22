@@ -26,7 +26,11 @@ example output
 from __future__ import print_function
 
 from collections import defaultdict
-import cPickle as pickle
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 from PIL import Image
 
 from six.moves import range
@@ -40,6 +44,11 @@ from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils.generic_utils import Progbar
 import numpy as np
+import re
+import os
+import sys
+
+from file_utility.file_utility import *
 
 np.random.seed(1337)
 
@@ -124,8 +133,50 @@ def build_discriminator():
 
     return Model(input=image, output=[fake, aux])
 
-if __name__ == '__main__':
+def setting_data_length(data):
+    if len(sys.argv) > 1 and re.match("datalen=\d+", sys.argv[1]):
+        datalen = int(re.findall("\d+", sys.argv[1])[0])
 
+        X_train = np.resize(data[0][0], (datalen, 28, 28))
+        y_train = np.resize(data[0][1], (datalen,))
+        X_test = np.resize(data[1][0], (datalen, 28, 28))
+        y_test = np.resize(data[1][1], (datalen,))
+
+        print("Number of data changed to", datalen)
+        return (X_train, y_train), (X_test, y_test)
+    else:
+        return data
+
+def load_weights_with_confirm(name, model):
+    path = "./" + name + "_params"
+    if not os.path.exists(path):
+        os.makedirs(path)
+    params_files_name = read_child_files_name(path)
+
+    if params_files_name:
+        params_files = [[int(re.findall("\d+", i)[0]), i] for i in params_files_name if is_file_extension(i, ".hdf5")]
+        params_files.sort()
+
+        epochs = [i[0] for i in params_files]
+
+        print("A parameter file of the " + name + " was found.")
+        s = input("Do you use it? (y/n) : ")
+        if s == "y" or s == "Y":
+            print("What epochs number do you want to start with?")
+            for i in params_files:
+                print("epoch ", i[0])
+            epoch_input = int(input("Please enter the number : "))
+
+            if epoch_input in epochs:
+                params_file_name = params_files[epochs.index(epoch_input)][1]
+                model.load_weights(path + "/" + params_file_name)
+                return epoch_input + 1
+            else:
+                print("The number you entered is invalid.")
+
+    return 0
+
+if __name__ == '__main__':
     # batch and latent size taken from the paper
     nb_epochs = 50
     batch_size = 100
@@ -153,8 +204,7 @@ if __name__ == '__main__':
     # get a fake image
     fake = generator([latent, image_class])
 
-    # we only want to be able to train generation for the combined model
-    discriminator.trainable = False
+    discriminator.trainable = True
     fake, aux = discriminator(fake)
     combined = Model(input=[latent, image_class], output=[fake, aux])
 
@@ -165,7 +215,8 @@ if __name__ == '__main__':
 
     # get our mnist data, and force it to be of shape (..., 1, 28, 28) with
     # range [-1, 1]
-    (X_train, y_train), (X_test, y_test) = mnist.load_data()
+    (X_train, y_train), (X_test, y_test) = setting_data_length(mnist.load_data())
+
     X_train = (X_train.astype(np.float32) - 127.5) / 127.5
     X_train = np.expand_dims(X_train, axis=1)
 
@@ -177,8 +228,13 @@ if __name__ == '__main__':
     train_history = defaultdict(list)
     test_history = defaultdict(list)
 
+    g_start_epoch = load_weights_with_confirm("generator", generator);
+    d_start_epoch = load_weights_with_confirm("discriminator", discriminator);
+
     for epoch in range(nb_epochs):
         print('Epoch {} of {}'.format(epoch + 1, nb_epochs))
+        print('Generator : Epoch {} of {}'.format(epoch + g_start_epoch + 1, nb_epochs + g_start_epoch))
+        print('Discriminator : Epoch {} of {}'.format(epoch + d_start_epoch + 1, nb_epochs + d_start_epoch))
 
         nb_batches = int(X_train.shape[0] / batch_size)
         progress_bar = Progbar(target=nb_batches)
@@ -187,6 +243,7 @@ if __name__ == '__main__':
         epoch_disc_loss = []
 
         for index in range(nb_batches):
+            print('\nBathes {} of {}'.format(index, nb_batches))
             progress_bar.update(index)
             # generate a new batch of noise
             noise = np.random.uniform(-1, 1, (batch_size, latent_size))
@@ -283,9 +340,9 @@ if __name__ == '__main__':
 
         # save weights every epoch
         generator.save_weights(
-            'params_generator_epoch_{0:03d}.hdf5'.format(epoch), True)
+            './generator_params/epoch_{0:03d}.hdf5'.format(epoch + g_start_epoch), True)
         discriminator.save_weights(
-            'params_discriminator_epoch_{0:03d}.hdf5'.format(epoch), True)
+            './discriminator_params/epoch_{0:03d}.hdf5'.format(epoch + d_start_epoch), True)
 
         # generate some digits to display
         noise = np.random.uniform(-1, 1, (100, latent_size))
