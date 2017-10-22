@@ -26,7 +26,11 @@ example output
 from __future__ import print_function
 
 from collections import defaultdict
-import _pickle as pickle
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 from PIL import Image
 
 from six.moves import range
@@ -174,8 +178,8 @@ def load_weights_with_confirm(name, model):
 
 if __name__ == '__main__':
     # batch and latent size taken from the paper
-    nb_epochs = 50
-    batch_size = 100
+    nb_epochs = 5
+    batch_size = 10
     latent_size = 100
 
     # Adam parameters suggested in https://arxiv.org/abs/1511.06434
