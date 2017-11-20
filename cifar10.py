@@ -31,7 +31,7 @@ np.random.seed(1337)
 class_num = 10
 K.set_image_dim_ordering('th')
 path = "output"
-save = 959
+save = 950
 
 def build_generator(latent_size):
     # we will map a pair of (z, L), where z is a latent vector and L is a
